@@ -1,0 +1,19 @@
+{
+  "name": "Agenda — Cahier à spirale",
+  "short_name": "Agenda",
+  "description": "L'agenda Cahier à spirale sur l'iPhone, hors ligne, synchronisé avec OneDrive.",
+  "lang": "fr-CA",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F4EFE3",
+  "theme_color": "#1F4E79",
+  "icons": [
+    {"src": "icones/icone-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icones/icone-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icones/icone-masquable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+    {"src": "icones/apple-touch-icon.png", "sizes": "180x180", "type": "image/png"}
+  ]
+}

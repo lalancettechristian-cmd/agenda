@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Essais de synchronisation</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  #rapport { padding: 16px; font-size: 15px; }
+  #rapport h1 { font-size: 20px; } #bilan { font-size: 18px; font-weight: 700; }
+  li.ok { color: var(--vert); } li.ko { color: var(--rouge); font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="rapport">
+  <h1>Synchronisation avec un OneDrive simulé (aucun compte réel)</h1>
+  <p id="bilan">…</p>
+  <ol id="resultats"></ol>
+</div>
+<div id="app" hidden></div>
+<div id="feuille" hidden></div>
+<div id="avis"></div>
+<script>
+"use strict";
+window.AGENDA_CONFIG = {clientId: "essai", autorite: "consumers", dossier: "Agenda", base: "agenda-essai-synchro"};
+
+/* ----- faux OneDrive : fichiers en mémoire, eTag, If-Match, téléchargement, envoi par session ----- */
+const serveur = {fichiers: new Map(), n: 0, journal: [], panne: false, avantPut: null, sessions: new Map()};
+function poser(nom, texte) { serveur.n++; serveur.fichiers.set(nom, {texte, etag: `"{E${serveur.n}},1"`}); }
+const vraiFetch = window.fetch.bind(window);
+window.fetch = async (url, opts) => {
+  opts = opts || {};
+  url = String(url);
+  if (!url.startsWith("https://")) return vraiFetch(url, opts);
+  if (serveur.panne) throw new TypeError("Failed to fetch");
+  const methode = (opts.method || "GET").toUpperCase();
+  const entetes = Object.assign({}, opts.headers || {});
+  serveur.journal.push([methode, url, entetes]);
+  const json = (statut, corps) => new Response(JSON.stringify(corps), {status: statut, headers: {"Content-Type": "application/json"}});
+  const corps = async () => (typeof opts.body === "string" ? opts.body : await new Response(opts.body).text());
+  if (url.startsWith("https://telechargement.essai/")) {
+    const f = serveur.fichiers.get(decodeURIComponent(new URL(url).pathname.slice(1)));
+    return f ? new Response(f.texte, {status: 200}) : new Response("", {status: 404});
+  }
+  if (url.startsWith("https://envoi.essai/")) {
+    const s = serveur.sessions.get(url);
+    const [, debut, fin, total] = /bytes (\d+)-(\d+)\/(\d+)/.exec(entetes["Content-Range"]).map(Number);
+    s.morceaux.push([debut, fin, await corps()]);
+    if (fin + 1 === total) { poser(s.nom, s.morceaux.map((m) => m[2]).join("")); return json(201, {name: s.nom}); }
+    return json(202, {nextExpectedRanges: [`${fin + 1}-`]});
+  }
+  if (url.includes("login.microsoftonline.com")) return json(400, {error: "invalid_grant"});
+  if (!url.includes("graph.microsoft.com")) return json(404, {});
+  if (entetes.Authorization !== "Bearer jeton-valide") return json(401, {error: {message: "jeton expiré"}});
+  const m = /\/me\/drive\/items\/D1:\/(.+?):(\/content|\/createUploadSession)?(\?.*)?$/.exec(url);
+  if (!m) return json(404, {error: {message: "adresse inconnue"}});
+  const nom = m[1].split("/").map(decodeURIComponent).join("/");
+  const actuel = serveur.fichiers.get(nom);
+  if (m[2] === "/createUploadSession") {
+    const adresse = "https://envoi.essai/" + serveur.sessions.size;
+    serveur.sessions.set(adresse, {nom, morceaux: []});
+    return json(200, {uploadUrl: adresse});
+  }
+  if (m[2] === "/content" && methode === "PUT") {
+    if (serveur.avantPut && nom === "cahier.json") { const f = serveur.avantPut; serveur.avantPut = null; f(); }
+    const present = serveur.fichiers.get(nom);
+    const attendu = entetes["If-Match"];
+    if (attendu && (!present || present.etag !== attendu)) return json(412, {error: {message: "eTag différent"}});
+    if (present && (m[3] || "").includes("conflictBehavior=fail")) return json(409, {error: {message: "nameAlreadyExists"}});
+    let final = nom;
+    if (present && (m[3] || "").includes("conflictBehavior=rename")) final = nom.replace(/\.json$/, " 1.json");
+    poser(final, await corps());
+    return json(present ? 200 : 201, {name: final.split("/").pop(), eTag: serveur.fichiers.get(final).etag});
+  }
+  if (methode === "DELETE") { serveur.fichiers.delete(nom); return new Response(null, {status: 204}); }
+  if (!actuel) return json(404, {error: {message: "itemNotFound"}});
+  return json(200, {name: nom, eTag: actuel.etag, "@microsoft.graph.downloadUrl": "https://telechargement.essai/" + encodeURIComponent(nom)});
+};
+</script>
+<script src="app.js"></script>
+<script>
+"use strict";
+const T = window.AgendaTests, I = T.interne, E = I.etat, S = I.sync;
+const resultats = [];
+const verifier = (cond, libelle) => resultats.push([!!cond, libelle]);
+const attendre = (ms) => new Promise((r) => setTimeout(r, ms));
+const srv = () => JSON.parse(serveur.fichiers.get("cahier.json").texte);
+const etagServeur = () => serveur.fichiers.get("cahier.json").etag;
+const avis = () => document.getElementById("avis").textContent;
+function fermerFeuille() { const z = document.getElementById("feuille"); z.hidden = true; z.replaceChildren(); }
+async function synchro() { I.annulerSynchro(); S.auDemarrage = false; await I.synchroniser(); I.annulerSynchro(); await attendre(30); }
+function modifierLocal(f) { f(E.cahier); I.modifier(); I.annulerSynchro(); }
+function modifierPC(f, poste) {
+  const c = srv();
+  f(c);
+  c.modifie_par = {poste: poste || "PC-BUREAU", utilisateur: "christian", date: "2026-10-17T10:00:00"};
+  poser("cahier.json", JSON.stringify(c));
+}
+const page = (c, k) => c.sections[0].pages[k];
+function cahierPC() {
+  return {version: 8, titre: "Agenda", couverture: {image: null, couleur: "#1F4E79"}, annee: 2026, semaine_lundi: false, feries: true,
+    modifie_par: {poste: "PC-BUREAU", utilisateur: "christian", date: "2026-10-17T09:00:00"}, champ_futur: {x: 1},
+    sections: [{id: "s1", titre: "Notes", couleur: "#4A86C5", type: "normale", sujets: true, modele_page: {type: "lignee"}, pages: [
+      {id: "p1", type: "lignee", cree: "2026-10-01", note: {id: "n1", titre: "Une"}, sujet: {id: "j1", titre: "Mes notes"}, texte: "A", images: []},
+      {id: "p2", type: "lignee", cree: "2026-10-01", note: {id: "n2", titre: "Deux"}, texte: "B", images: []}]}]};
+}
+
+(async () => {
+  try {
+    I.definirJetons({acces: "jeton-valide", expire: Date.now() + 3600e3, rafraichir: "r"});
+    E.mode = "reel";
+    E.dossier = {id: "D1", chemin: "Agenda"};
+    poser("cahier.json", JSON.stringify(cahierPC()));
+
+    // 1. Premier téléchargement
+    await synchro();
+    verifier(E.cahier && page(E.cahier, 1).texte === "B" && E.etag === etagServeur() && !E.modifie && E.cahier.champ_futur.x === 1,
+      "premier téléchargement : copie locale identique à OneDrive");
+
+    // 2. Modification sur l'iPhone : envoi avec If-Match
+    const etagAvant = etagServeur();
+    modifierLocal((c) => { page(c, 0).texte = "A écrit sur l'iPhone"; });
+    verifier(E.modifie, "modification locale : marquée « à envoyer »");
+    await synchro();
+    const put = serveur.journal.filter(([m, u]) => m === "PUT" && u.includes("cahier.json")).pop();
+    let c = srv();
+    verifier(page(c, 0).texte === "A écrit sur l'iPhone" && c.modifie_par.poste === "iPhone" && c.champ_futur.x === 1 && put[2]["If-Match"] === etagAvant,
+      "envoi : texte, auteur « iPhone », champ inconnu gardé, If-Match = eTag reçu");
+    verifier(!E.modifie && E.etag === etagServeur(), "après l'envoi : plus rien à envoyer, eTag à jour");
+
+    // 3. Modification sur le PC seulement : l'iPhone se met à jour
+    modifierPC((c) => { page(c, 1).texte = "B écrit sur le PC"; });
+    await synchro();
+    verifier(page(E.cahier, 1).texte === "B écrit sur le PC" && !E.modifie && avis().includes("PC-BUREAU"), "mise à jour depuis le PC (avis affiché)");
+
+    // 4. Les deux côtés, pages différentes : fusion
+    modifierPC((c) => { page(c, 1).texte = "B2 (PC)"; });
+    modifierLocal((c) => { page(c, 0).texte = "A2 (iPhone)"; });
+    await synchro();
+    c = srv();
+    verifier(page(c, 0).texte === "A2 (iPhone)" && page(c, 1).texte === "B2 (PC)" && !E.modifie && avis().includes("fusionnées"),
+      "pages différentes modifiées sur le PC et l'iPhone : fusionnées et envoyées");
+
+    // 5. Les deux côtés, même page : la version de l'iPhone est gardée à part
+    modifierPC((c) => { page(c, 0).texte = "A3 (PC)"; });
+    modifierLocal((c) => { page(c, 0).texte = "A3 (iPhone)"; });
+    await synchro();
+    const copie = [...serveur.fichiers.keys()].find((k) => /^cahier-conflit-iPhone-\d{8}-\d{6}\.json$/.test(k));
+    verifier(copie && page(JSON.parse(serveur.fichiers.get(copie).texte), 0).texte === "A3 (iPhone)", `même page modifiée des deux côtés : copie ${copie || "absente"}`);
+    verifier(page(E.cahier, 0).texte === "A3 (PC)" && page(srv(), 0).texte === "A3 (PC)" && !E.modifie, "l'iPhone affiche la version du PC, qui n'est pas écrasée");
+    verifier(!document.getElementById("feuille").hidden && document.getElementById("feuille").textContent.includes(copie), "message : où la version de l'iPhone a été gardée");
+    fermerFeuille();
+
+    // 6. Course : le PC enregistre entre la lecture et l'envoi (réponse 412), puis fusion
+    modifierLocal((c) => { page(c, 0).texte = "A4 (iPhone)"; });
+    serveur.avantPut = () => modifierPC((c) => { page(c, 1).texte = "B4 (PC, pendant l'envoi)"; });
+    await synchro();
+    c = srv();
+    verifier(page(c, 0).texte === "A4 (iPhone)" && page(c, 1).texte === "B4 (PC, pendant l'envoi)" && !E.modifie,
+      "envoi refusé (412) parce que le PC venait d'enregistrer : relu, fusionné, renvoyé");
+
+    // 7. Hors ligne : les modifications attendent
+    modifierLocal((c) => { page(c, 1).texte = "B5 (hors ligne)"; });
+    serveur.panne = true;
+    await synchro();
+    verifier(S.horsLigne && E.modifie, "hors ligne : modification gardée sur l'iPhone, statut « Hors ligne »");
+    serveur.panne = false;
+    await synchro();
+    verifier(!S.horsLigne && !E.modifie && page(srv(), 1).texte === "B5 (hors ligne)", "retour du réseau : modification envoyée");
+
+    // 8. Agenda d'une version plus récente : lecture seule
+    modifierPC((c) => { c.version = 9; });
+    await synchro();
+    modifierLocal((c) => { page(c, 0).texte = "interdit"; });
+    verifier(E.cahier.version === 9 && !E.modifie && document.getElementById("app").textContent.includes("version plus récente"),
+      "agenda en version 9 : lecture seule, rien n'est modifié");
+    modifierPC((c) => { c.version = 8; page(c, 0).texte = "A6"; });
+    await synchro();
+    verifier(E.cahier.version === 8 && page(E.cahier, 0).texte === "A6", "retour en version 8 : modifiable de nouveau");
+
+    // 9. Pièces jointes : nom libre « (2) », gros fichier envoyé par morceaux
+    poser("documents/p1/Facture.pdf", "ancienne");
+    const nom = await I.envoyerPiece("p1", new File(["nouvelle"], "Facture.pdf", {type: "application/pdf"}));
+    verifier(nom === "Facture (2).pdf" && serveur.fichiers.get("documents/p1/Facture (2).pdf").texte === "nouvelle"
+      && serveur.fichiers.get("documents/p1/Facture.pdf").texte === "ancienne", "pièce jointe du même nom : « Facture (2).pdf », l'ancienne intacte");
+    const gros = "x".repeat(5 * 1024 * 1024 + 7);
+    const nomGros = await I.envoyerPiece("p2", new File([gros], "Vidéo.mov"));
+    const session = [...serveur.sessions.values()].pop();
+    verifier(nomGros === "Vidéo.mov" && serveur.fichiers.get("documents/p2/Vidéo.mov").texte.length === gros.length && session.morceaux.length === 2,
+      "fichier de plus de 4 Mo : envoyé en 2 morceaux");
+
+    // 10. Connexion expirée : statut « Se connecter », sans perdre la modification
+    modifierLocal((c) => { page(c, 1).texte = "B7"; });
+    I.definirJetons({acces: "expiré", expire: Date.now() + 3600e3, rafraichir: "périmé"});
+    await synchro();
+    verifier(S.besoinConnexion && E.modifie && document.querySelector(".barre .statut .texte").textContent === "Se connecter",
+      "jeton expiré et non renouvelable : « Se connecter », modification gardée");
+    I.definirJetons({acces: "jeton-valide", expire: Date.now() + 3600e3, rafraichir: "r"});
+    await synchro();
+    verifier(!S.besoinConnexion && !E.modifie && page(srv(), 1).texte === "B7", "après reconnexion : modification envoyée");
+  } catch (e) {
+    verifier(false, "exception : " + (e.stack || e));
+  }
+  const ol = document.getElementById("resultats");
+  ol.replaceChildren(...resultats.map(([ok, l]) => { const li = document.createElement("li"); li.className = ok ? "ok" : "ko"; li.textContent = (ok ? "✓ " : "✗ ") + l; return li; }));
+  const ko = resultats.filter(([ok]) => !ok).length;
+  document.getElementById("bilan").textContent = `${resultats.length - ko} / ${resultats.length} vérifications réussies` + (ko ? ` — ${ko} échec(s)` : "");
+  document.title = ko ? "ÉCHEC" : "OK " + resultats.length;
+})();
+</script>
+</body>
+</html>

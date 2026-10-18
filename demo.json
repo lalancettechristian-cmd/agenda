@@ -1,0 +1,391 @@
+{
+ "version": 8,
+ "titre": "Agenda de démonstration",
+ "couverture": {
+  "image": null,
+  "couleur": "#1F4E79"
+ },
+ "annee": 2026,
+ "semaine_lundi": false,
+ "feries": true,
+ "police": "Segoe UI",
+ "dessin": {
+  "couleur": "#1D2B53",
+  "epaisseur": 0.09
+ },
+ "sections": [
+  {
+   "id": "1c5d8ca28664",
+   "titre": "Courriels",
+   "couleur": "#7E5BB5",
+   "type": "normale",
+   "sujets": false,
+   "modele_page": {
+    "type": "web",
+    "service": "courriels"
+   },
+   "pages": [
+    {
+     "id": "176dd4711b93",
+     "type": "web",
+     "cree": "2026-10-17",
+     "note": {
+      "id": "e1d911d158f9",
+      "titre": "Gmail"
+     },
+     "service": "courriels",
+     "url": "https://mail.google.com/"
+    }
+   ]
+  },
+  {
+   "id": "calendrier",
+   "titre": "Calendrier",
+   "couleur": "#C0504D",
+   "type": "calendrier",
+   "modele_page": {
+    "type": "lignee"
+   },
+   "sujets": false,
+   "pages": [
+    {
+     "id": "88cc85a3125d",
+     "type": "calendrier"
+    }
+   ]
+  },
+  {
+   "id": "1888ac16b2c4",
+   "titre": "Agenda",
+   "couleur": "#5B6CC9",
+   "type": "normale",
+   "sujets": false,
+   "modele_page": {
+    "type": "agenda"
+   },
+   "pages": [
+    {
+     "id": "3160e60de207",
+     "type": "agenda",
+     "cree": "2026-10-17",
+     "note": {
+      "id": "5f80300f6c70",
+      "titre": "Agenda"
+     },
+     "jours": {
+      "2026-10-12": [
+       "Dentiste à 9 h",
+       "Rappeler le garage"
+      ],
+      "2026-10-14": [
+       "Souper chez Kate, 18 h"
+      ],
+      "2026-10-16": [
+       "Paie",
+       "",
+       "Cinéma avec Jade"
+      ],
+      "2026-10-21": [
+       "Réunion de l'école, 19 h"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "3cda4af6acd3",
+   "titre": "Notes",
+   "couleur": "#4A86C5",
+   "type": "normale",
+   "sujets": true,
+   "modele_page": {
+    "type": "lignee"
+   },
+   "pages": [
+    {
+     "id": "5dbf4fb635bb",
+     "type": "lignee",
+     "cree": "2026-10-17",
+     "note": {
+      "id": "ef2eb87dbf89",
+      "titre": "Bienvenue"
+     },
+     "texte": "Ceci est l'agenda de démonstration de l'iPhone.\n\nTouchez un onglet pour voir ses notes, puis une note pour l'ouvrir. Glissez vers la gauche ou la droite pour changer de page.\n\nTout ce que vous écrivez ici reste sur l'iPhone : la démonstration n'est jamais envoyée dans OneDrive.",
+     "images": [],
+     "sujet": {
+      "id": "21dff51c29f6",
+      "titre": "Mes notes"
+     },
+     "pieces": [
+      {
+       "id": "a098bee99d9c",
+       "description": "Mode d'emploi",
+       "fichier": "Mode d'emploi.pdf"
+      }
+     ]
+    },
+    {
+     "id": "0a6433f44eda",
+     "type": "lignee",
+     "cree": "2026-10-17",
+     "note": {
+      "id": "3454a194c304",
+      "titre": "Liste d'épicerie"
+     },
+     "texte": "Lait\nPain de blé\nPommes\nCafé\nFromage cheddar",
+     "images": []
+    },
+    {
+     "id": "8f468f85d4f7",
+     "type": "lignee",
+     "cree": "2026-10-17",
+     "note": {
+      "id": "5fadf295aaed",
+      "titre": "Rénovation de la cuisine"
+     },
+     "texte": "Armoires : demander trois soumissions.\nComptoir en quartz, couleur pâle.\nBudget : 15 000 $",
+     "images": [],
+     "sujet": {
+      "id": "89139e17b38a",
+      "titre": "Projets"
+     }
+    },
+    {
+     "id": "c900754fc77c",
+     "type": "quadrillee",
+     "cree": "2026-10-17",
+     "texte": "Mesures\nMur du fond : 3,2 m\nFenêtre : 1,1 m",
+     "images": []
+    }
+   ]
+  },
+  {
+   "id": "bbd76af27c3d",
+   "titre": "Finance",
+   "couleur": "#3C9A5F",
+   "type": "normale",
+   "sujets": false,
+   "modele_page": {
+    "type": "finance"
+   },
+   "pages": [
+    {
+     "id": "45f24fc3b8f1",
+     "type": "finance",
+     "cree": "2026-10-17",
+     "note": {
+      "id": "47df19e2b441",
+      "titre": "Compte courant"
+     },
+     "compte": {
+      "solde_initial": 1250.0
+     },
+     "operations": [
+      {
+       "date": "2026-10-05",
+       "ref": "",
+       "tiers": "Paie",
+       "debit": 0.0,
+       "credit": 1850.0,
+       "pointe": true
+      },
+      {
+       "date": "2026-10-07",
+       "ref": "",
+       "tiers": "Loyer",
+       "debit": 950.0,
+       "credit": 0.0,
+       "pointe": true
+      },
+      {
+       "date": "2026-10-11",
+       "ref": "",
+       "tiers": "Épicerie IGA",
+       "debit": 132.47,
+       "credit": 0.0,
+       "pointe": true
+      },
+      {
+       "date": "2026-10-14",
+       "ref": "",
+       "tiers": "Hydro-Québec",
+       "debit": 88.2,
+       "credit": 0.0,
+       "pointe": false
+      },
+      {
+       "date": "2026-10-16",
+       "ref": "",
+       "tiers": "Pharmacie",
+       "debit": 23.15,
+       "credit": 0.0,
+       "pointe": false
+      },
+      {
+       "date": "2026-10-19",
+       "ref": "",
+       "tiers": "Paie",
+       "debit": 0.0,
+       "credit": 1850.0,
+       "pointe": false
+      }
+     ],
+     "modeles": [
+      {
+       "id": "e9ca9c4eb668",
+       "libelle": "Épicerie IGA",
+       "sens": "debit",
+       "montant": 0.0
+      },
+      {
+       "id": "32a7624f389b",
+       "libelle": "Hydro-Québec",
+       "sens": "debit",
+       "montant": 90.0
+      },
+      {
+       "id": "9503eea580b4",
+       "libelle": "Loyer",
+       "sens": "debit",
+       "montant": 950.0
+      },
+      {
+       "id": "40a4b4c5e797",
+       "libelle": "Paie",
+       "sens": "credit",
+       "montant": 1850.0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "d3c1a5edd948",
+   "titre": "ToDo",
+   "couleur": "#E39B2D",
+   "type": "normale",
+   "sujets": true,
+   "modele_page": {
+    "type": "todo"
+   },
+   "pages": [
+    {
+     "id": "0aa362837572",
+     "type": "todo",
+     "cree": "2026-10-17",
+     "note": {
+      "id": "93cdcf1eecf4",
+      "titre": "Tâches"
+     },
+     "taches": [
+      {
+       "id": "a6d81d001f22",
+       "texte": "Payer la carte de crédit",
+       "fait": false,
+       "echeance": "2026-10-20"
+      },
+      {
+       "id": "88a4dfacbace",
+       "texte": "Appeler le garage",
+       "fait": true,
+       "echeance": null
+      },
+      {
+       "id": "d927f5ad20b5",
+       "texte": "Acheter un cadeau pour Jade",
+       "fait": false,
+       "echeance": "2026-10-26"
+      },
+      {
+       "id": "48e072f479ea",
+       "texte": "Prendre rendez-vous chez le dentiste",
+       "fait": false,
+       "echeance": "2026-10-15"
+      }
+     ],
+     "sujet": {
+      "id": "2337362efa96",
+      "titre": "Mes tâches"
+     }
+    }
+   ]
+  },
+  {
+   "id": "70aea013ae82",
+   "titre": "Photo",
+   "couleur": "#C8507E",
+   "type": "normale",
+   "sujets": true,
+   "modele_page": {
+    "type": "web",
+    "service": "photo"
+   },
+   "pages": [
+    {
+     "id": "ee9007e6e524",
+     "type": "web",
+     "cree": "2026-10-17",
+     "note": {
+      "id": "dc0e3efbc561",
+      "titre": "Google Photos"
+     },
+     "service": "photo",
+     "url": "https://photos.google.com/",
+     "sujet": {
+      "id": "3a7d9bf65730",
+      "titre": "Mes photos"
+     }
+    }
+   ]
+  },
+  {
+   "id": "95e2acf01370",
+   "titre": "Contact",
+   "couleur": "#2FA3A0",
+   "type": "normale",
+   "sujets": true,
+   "modele_page": {
+    "type": "colonnes",
+    "colonnes": [
+     "Nom",
+     "Tél."
+    ]
+   },
+   "pages": [
+    {
+     "id": "ef60b29e192f",
+     "type": "colonnes",
+     "cree": "2026-10-17",
+     "note": {
+      "id": "10ea88b0b622",
+      "titre": ""
+     },
+     "colonnes": [
+      "Nom",
+      "Tél."
+     ],
+     "cellules": [
+      [
+       "Kate",
+       "418 555-0101"
+      ],
+      [
+       "Garage Tremblay",
+       "418 555-0199"
+      ],
+      [
+       "Dr Gagnon (dentiste)",
+       "418 555-0123"
+      ]
+     ],
+     "images_libres": [],
+     "sujet": {
+      "id": "f86d0c122bf1",
+      "titre": "Mes contacts"
+     }
+    }
+   ]
+  }
+ ],
+ "_demo_reference": "2026-10-17"
+}

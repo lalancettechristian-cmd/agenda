@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Essais de l'app</title>
+<style>
+  :root { --fond: #FBF7EC; --texte: #1D2B53; --ok: #2E7D4F; --ko: #B0413E; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --fond: #1C2026; --texte: #E6E8EC; --ok: #6CC08F; --ko: #E07B77; } }
+  :root[data-theme="dark"] { --fond: #1C2026; --texte: #E6E8EC; --ok: #6CC08F; --ko: #E07B77; }
+  body { margin: 0; padding: 16px; background: var(--fond); color: var(--texte); font: 15px/1.45 -apple-system, "Segoe UI", sans-serif; }
+  h1 { font-size: 20px; } li.ok { color: var(--ok); } li.ko { color: var(--ko); font-weight: 600; } #bilan { font-size: 18px; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>Essais de l'app iPhone (calculs comparés à ceux du PC)</h1>
+<p id="bilan">…</p>
+<ol id="resultats"></ol>
+<script src="app.js"></script>
+<script>
+"use strict";
+const T = window.AgendaTests;
+const resultats = [];
+function verifier(cond, libelle) { resultats.push([!!cond, libelle]); }
+const egal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// Jours fériés calculés par le PC (modele.feries_quebec), 2024 à 2031
+const FERIES_PC = {"2024": {"2024-01-01": "Jour de l'An", "2024-03-29": "Vendredi saint", "2024-04-01": "Lundi de Pâques", "2024-05-20": "Journée des patriotes", "2024-06-24": "Fête nationale", "2024-07-01": "Fête du Canada", "2024-09-02": "Fête du Travail", "2024-10-14": "Action de grâce", "2024-12-25": "Noël"}, "2025": {"2025-01-01": "Jour de l'An", "2025-04-18": "Vendredi saint", "2025-04-21": "Lundi de Pâques", "2025-05-19": "Journée des patriotes", "2025-06-24": "Fête nationale", "2025-07-01": "Fête du Canada", "2025-09-01": "Fête du Travail", "2025-10-13": "Action de grâce", "2025-12-25": "Noël"}, "2026": {"2026-01-01": "Jour de l'An", "2026-04-03": "Vendredi saint", "2026-04-06": "Lundi de Pâques", "2026-05-18": "Journée des patriotes", "2026-06-24": "Fête nationale", "2026-07-01": "Fête du Canada", "2026-09-07": "Fête du Travail", "2026-10-12": "Action de grâce", "2026-12-25": "Noël"}, "2027": {"2027-01-01": "Jour de l'An", "2027-03-26": "Vendredi saint", "2027-03-29": "Lundi de Pâques", "2027-05-24": "Journée des patriotes", "2027-06-24": "Fête nationale", "2027-07-01": "Fête du Canada", "2027-09-06": "Fête du Travail", "2027-10-11": "Action de grâce", "2027-12-25": "Noël"}, "2028": {"2028-01-01": "Jour de l'An", "2028-04-14": "Vendredi saint", "2028-04-17": "Lundi de Pâques", "2028-05-22": "Journée des patriotes", "2028-06-24": "Fête nationale", "2028-07-01": "Fête du Canada", "2028-09-04": "Fête du Travail", "2028-10-09": "Action de grâce", "2028-12-25": "Noël"}, "2029": {"2029-01-01": "Jour de l'An", "2029-03-30": "Vendredi saint", "2029-04-02": "Lundi de Pâques", "2029-05-21": "Journée des patriotes", "2029-06-24": "Fête nationale", "2029-07-01": "Fête du Canada", "2029-09-03": "Fête du Travail", "2029-10-08": "Action de grâce", "2029-12-25": "Noël"}, "2030": {"2030-01-01": "Jour de l'An", "2030-04-19": "Vendredi saint", "2030-04-22": "Lundi de Pâques", "2030-05-20": "Journée des patriotes", "2030-06-24": "Fête nationale", "2030-07-01": "Fête du Canada", "2030-09-02": "Fête du Travail", "2030-10-14": "Action de grâce", "2030-12-25": "Noël"}, "2031": {"2031-01-01": "Jour de l'An", "2031-04-11": "Vendredi saint", "2031-04-14": "Lundi de Pâques", "2031-05-19": "Journée des patriotes", "2031-06-24": "Fête nationale", "2031-07-01": "Fête du Canada", "2031-09-01": "Fête du Travail", "2031-10-13": "Action de grâce", "2031-12-25": "Noël"}};
+for (const [a, attendu] of Object.entries(FERIES_PC)) {
+  verifier(egal(Object.fromEntries(T.feriesQuebec(Number(a))), attendu), `jours fériés ${a} identiques au PC`);
+}
+
+// Montants : sorties de cahier_spirale.montant_texte
+const NB = " ";
+for (const [v, sans, avec] of [[0, "0,00", "0,00" + NB + "$"], [1330.55, "1" + NB + "330,55", "1" + NB + "330,55" + NB + "$"],
+  [-12.5, "(12,50)", "(12,50" + NB + "$)"], [1234567.891, "1" + NB + "234" + NB + "567,89", "1" + NB + "234" + NB + "567,89" + NB + "$"],
+  [-0.004, "(0,00)", "(0,00" + NB + "$)"], [999.995, "1" + NB + "000,00", "1" + NB + "000,00" + NB + "$"]]) {
+  verifier(T.montantTexte(v) === sans && T.montantTexte(v, true) === avec, `montant ${v} écrit comme sur le PC (${T.montantTexte(v, true)})`);
+}
+for (const [t, attendu] of [["1 234,56", 1234.56], ["1234.56", 1234.56], ["(12,00)", -12], ["", 0], ["abc", null],
+  ["1.234,56", 1234.56], ["12,5 $", 12.5], ["1 330,55", 1330.55], ["-3", -3], ["0,005", 0.01]]) {
+  verifier(T.lireMontant(t) === attendu, `lecture du montant « ${t} » → ${attendu}`);
+}
+
+// Notes et sujets (mêmes règles que le PC)
+function section() {
+  const A = T.nouvellePage({type: "lignee"}, "N1"); A.sujet = {id: "s1", titre: "S1"};
+  const B = T.nouvellePage({type: "lignee"}, "N2");
+  const C = T.nouvellePage({type: "lignee"}, "N3"); C.sujet = {id: "s2", titre: "S2"};
+  const D = T.nouvellePage({type: "lignee"});
+  return {id: "sec", titre: "Notes", sujets: true, type: "normale", modele_page: {type: "lignee"}, pages: [A, B, C, D]};
+}
+let s = section();
+verifier(egal(T.notesSection(s), [[0, 1], [1, 2], [2, 4]]), "notes de la section : début et fin");
+verifier(egal(T.entreesSection(s).map((e) => e.genre + e.debut), ["sujet0", "note0", "note1", "sujet2", "note2"]), "liste : sujets puis leurs notes");
+verifier(T.finSujet(s, 0) === 2 && T.sujetDe(s, 1) === 0 && T.debutNote(s, 3) === 2 && T.finNote(s, 2) === 4, "fin du sujet, sujet et début de note d'une page");
+s.sujets = false;
+verifier(T.sujetDe(s, 1) === null && !T.entreesSection(s).some((e) => e.genre === "sujet"), "sans l'option Séparer notes par sujets : pas de sujet");
+s = section();
+const C0 = s.pages[2];
+const nouvelle = T.ajouterPageNote(s, 2, 4, 3, null, "debut");
+verifier(s.pages[2] === nouvelle && nouvelle.note.titre === "N3" && nouvelle.sujet.id === "s2" && !C0.note && !C0.sujet,
+  "+ Page au début : la nouvelle page porte le titre de la note et le sujet");
+verifier(T.ajouterPageNote(s, 2, 5, 2, null, "fin") === s.pages[5] && T.finNote(s, 2) === 6, "+ Page en dernier : à la fin de la note");
+s = section();
+const D0 = s.pages[3];
+verifier(T.deplacerPage(s, 2, 4, 3, "debut") === 2 && s.pages[2] === D0 && D0.note.titre === "N3" && D0.sujet.id === "s2" && !s.pages[3].note,
+  "déplacer la page au début : le titre et le sujet restent sur la première page");
+verifier(T.deplacerPage(s, 2, 4, 2, "avant") === null, "la page reste dans sa note");
+s = section();
+T.supprimerPages(s, 0, 1);
+verifier(s.pages[0].sujet && s.pages[0].sujet.id === "s1" && s.pages[0].note.titre === "N2", "supprimer la première note d'un sujet : le sujet passe à la note suivante");
+s = section();
+T.supprimerPages(s, 2, 3);
+verifier(s.pages.length === 3 && s.pages[2].note.titre === "N3" && s.pages[2].sujet.id === "s2", "supprimer la première page d'une note : la suivante prend le titre");
+
+// Cases d'une page en colonnes
+const pc = T.nouvellePage({type: "colonnes", colonnes: ["Nom", "Tél."]}, "Contacts");
+T.poserCellule(pc, 2, 1, "418");
+verifier(egal(pc.cellules, [["", ""], ["", ""], ["", "418"]]), "case posée : lignes complétées");
+T.poserCellule(pc, 2, 1, " ");
+verifier(egal(pc.cellules, []), "lignes vides retirées à la fin");
+
+// Images dans le texte (caractère OBJ)
+const O = T.OBJ;
+const pt = {texte: `ab${O}cd${O}ef`, images: [{fichier: "1.png"}, {fichier: "2.png"}]};
+T.appliquerSaisieTexte(pt, pt.texte, `abcd${O}ef`);
+verifier(pt.texte === `abcd${O}ef` && egal(pt.images, [{fichier: "2.png"}]), "effacer une image du texte la retire de la page");
+T.appliquerSaisieTexte(pt, pt.texte, `ab${O}xcd${O}ef`);
+verifier(pt.texte === `abxcd${O}ef` && pt.images.length === 1, "une image ne s'ajoute pas en tapant (caractère retiré)");
+
+// Finance : tri par date et solde courant
+const pf = T.nouvellePage({type: "finance"}, "Compte");
+pf.compte.solde_initial = 100;
+pf.operations = [{date: "2026-10-05", tiers: "b", debit: 30, credit: 0, pointe: false, ref: ""},
+  {date: "2026-10-01", tiers: "a", debit: 0, credit: 50, pointe: true, ref: ""},
+  {date: "2026-10-05", tiers: "c", debit: 0.1, credit: 0.2, pointe: false, ref: ""}];
+const sf = T.soldes(pf);
+verifier(egal(sf.triees.map((o) => o.tiers), ["a", "b", "c"]) && egal(sf.soldes, [150, 120, 120.1]), "registre : ordre de date et solde courant");
+verifier(pf.operations[0].tiers === "b", "l'affichage ne réordonne pas les données");
+
+// Semaine de l'agenda
+const samedi = T.dateIso("2026-10-17");
+verifier(T.iso(T.debutSemaine(samedi, false)) === "2026-10-11" && T.iso(T.debutSemaine(samedi, true)) === "2026-10-12", "début de semaine (dimanche ou lundi)");
+
+// Fusion des versions iPhone / PC
+function cahier() {
+  const sec = section();
+  return {version: 8, titre: "Agenda", sections: [sec]};
+}
+const B = cahier();
+const L1 = JSON.parse(JSON.stringify(B)), R1 = JSON.parse(JSON.stringify(B));
+L1.sections[0].pages[0].texte = "iPhone";
+R1.sections[0].pages[1].texte = "PC";
+R1.modifie_par = {poste: "PC"};
+let f = T.fusionner(B, L1, R1);
+verifier(!f.copie && f.cahier.sections[0].pages[0].texte === "iPhone" && f.cahier.sections[0].pages[1].texte === "PC" && f.cahier.modifie_par.poste === "PC",
+  "fusion : pages différentes modifiées sur l'iPhone et sur le PC");
+const L2 = JSON.parse(JSON.stringify(B)), R2 = JSON.parse(JSON.stringify(B));
+L2.sections[0].pages[0].texte = "iPhone";
+R2.sections[0].pages[0].texte = "PC";
+f = T.fusionner(B, L2, R2);
+verifier(f.copie === L2 && f.cahier === R2, "même page modifiée des deux côtés : version du PC, celle de l'iPhone gardée à part");
+const L3 = JSON.parse(JSON.stringify(B)), R3 = JSON.parse(JSON.stringify(B));
+L3.sections[0].pages.push(T.nouvellePage({type: "lignee"}, "Nouvelle note de l'iPhone"));
+L3.titre = "Mon agenda";
+R3.sections[0].pages[3].texte = "suite écrite sur le PC";
+f = T.fusionner(B, L3, R3);
+verifier(!f.copie && f.cahier.sections[0].pages.length === 5 && f.cahier.sections[0].pages[3].texte === "suite écrite sur le PC" && f.cahier.titre === "Mon agenda",
+  "fusion : note ajoutée sur l'iPhone, page modifiée sur le PC, titre changé");
+const L4 = JSON.parse(JSON.stringify(B)), R4 = JSON.parse(JSON.stringify(B));
+L4.sections[0].pages.push(T.nouvellePage({type: "lignee"}, "iPhone"));
+R4.sections[0].pages.push(T.nouvellePage({type: "lignee"}, "PC"));
+f = T.fusionner(B, L4, R4);
+verifier(f.copie === L4, "structure changée des deux côtés : version de l'iPhone gardée à part");
+const L5 = JSON.parse(JSON.stringify(B)), R5 = JSON.parse(JSON.stringify(B));
+R5.inconnu = {x: 1};
+L5.sections[0].pages[0].champ_futur = "gardé";
+f = T.fusionner(B, L5, R5);
+verifier(!f.copie && f.cahier.inconnu.x === 1 && f.cahier.sections[0].pages[0].champ_futur === "gardé", "champs inconnus gardés des deux côtés");
+verifier(T.fusionner(B, L1, Object.assign(JSON.parse(JSON.stringify(R1)), {version: 9})).copie === L1, "version plus récente sur le PC : pas de fusion");
+
+// Données de démonstration
+fetch("demo.json").then((r) => r.json()).then((c) => {
+  verifier(c.version === 8 && c.sections.length === 8 && c._demo_reference, "demo.json : format version 8, 8 sections, date de référence");
+  const ref = c._demo_reference;
+  const jour = T.dateIso(ref);
+  jour.setDate(jour.getDate() + 17);
+  const agenda = c.sections.find((x) => x.titre === "Agenda").pages[0];
+  const cles = Object.keys(agenda.jours);
+  T.decalerDemo(c, jour);
+  const apres = Object.keys(c.sections.find((x) => x.titre === "Agenda").pages[0].jours);
+  const d0 = T.dateIso(cles[0]), d1 = T.dateIso(apres[0]);
+  verifier(!c._demo_reference && Math.round((d1 - d0) / 86400000) === 14, "démonstration : dates décalées en semaines entières");
+  verifier(T.entreesSection(c.sections.find((x) => x.titre === "Notes")).filter((e) => e.genre === "sujet").length === 2, "démonstration : deux sujets dans Notes");
+}).catch((e) => verifier(false, "demo.json illisible : " + e)).finally(afficher);
+
+function afficher() {
+  const ol = document.getElementById("resultats");
+  ol.replaceChildren(...resultats.map(([ok, l]) => { const li = document.createElement("li"); li.className = ok ? "ok" : "ko"; li.textContent = (ok ? "✓ " : "✗ ") + l; return li; }));
+  const ko = resultats.filter(([ok]) => !ok).length;
+  document.getElementById("bilan").textContent = `${resultats.length - ko} / ${resultats.length} vérifications réussies` + (ko ? ` — ${ko} échec(s)` : "");
+  document.title = ko ? "ÉCHEC" : "OK " + resultats.length;
+}
+</script>
+</body>
+</html>

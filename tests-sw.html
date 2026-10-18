@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Essais hors ligne</title>
+<style>
+  :root { --fond: #FBF7EC; --texte: #1D2B53; --ok: #2E7D4F; --ko: #B0413E; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --fond: #1C2026; --texte: #E6E8EC; --ok: #6CC08F; --ko: #E07B77; } }
+  :root[data-theme="dark"] { --fond: #1C2026; --texte: #E6E8EC; --ok: #6CC08F; --ko: #E07B77; }
+  body { margin: 0; padding: 16px; background: var(--fond); color: var(--texte); font: 15px/1.45 -apple-system, "Segoe UI", sans-serif; }
+  h1 { font-size: 20px; } li.ok { color: var(--ok); } li.ko { color: var(--ko); font-weight: 600; } #bilan { font-size: 18px; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>Service worker : installation, mise à jour, lancement hors ligne</h1>
+<p id="bilan">…</p>
+<ol id="resultats"></ol>
+<script>
+"use strict";
+/* Le code de sw.js est exécuté ici avec le vrai cache du navigateur et des événements simulés (le navigateur des
+   essais n'inscrit pas de service worker) : installation, nettoyage des anciennes versions, réponses hors ligne. */
+const resultats = [];
+const verifier = (cond, libelle) => resultats.push([!!cond, libelle]);
+let horsLigne = false;
+const reseau = (req, opts) => (horsLigne ? Promise.reject(new TypeError("Failed to fetch")) : fetch(req, opts));
+function evenement(extra) {
+  const attentes = [];
+  return Object.assign({attentes, waitUntil(p) { attentes.push(p); }, respondWith(p) { this.reponse = p; }}, extra);
+}
+(async () => {
+  try {
+    for (const k of await caches.keys()) if (k.startsWith("agenda-")) await caches.delete(k);
+    await (await caches.open("agenda-0.9.0")).put(new URL("ancien.txt", location.href).href, new Response("ancien"));
+    await (await caches.open("images-agenda")).put(new URL("__images/x.png", location.href).href, new Response("image"));
+    const ecouteurs = {};
+    const portee = new URL("./", location.href).href;
+    const fauxSelf = {addEventListener: (t, f) => { ecouteurs[t] = f; }, location: new URL("sw.js", portee),
+      registration: {scope: portee}, skipWaiting: async () => {}, clients: {claim: async () => {}}};
+    const code = await (await fetch("sw.js", {cache: "no-store"})).text();
+    const version = /const VERSION = "([^"]+)"/.exec(code)[1];
+    new Function("self", "caches", "fetch", code)(fauxSelf, caches, reseau);
+    verifier(ecouteurs.install && ecouteurs.activate && ecouteurs.fetch, "sw.js : installation, activation et requêtes prises en charge");
+
+    // Installation : tous les fichiers de l'app en cache (un fichier manquant ferait échouer l'installation)
+    let e = evenement();
+    ecouteurs.install(e);
+    await Promise.all(e.attentes);
+    const cache = await caches.open("agenda-" + version);
+    const enCache = (await cache.keys()).map((q) => q.url.slice(portee.length));
+    const attendus = ["", "index.html", "style.css", "app.js", "config.js", "demo.json", "manifest.webmanifest"];
+    verifier(attendus.every((f) => enCache.includes(f)) && enCache.filter((c) => c.startsWith("icones/")).length === 5,
+      `installation : ${enCache.length} fichiers en cache (app, réglages, démonstration, icônes)`);
+
+    // Activation : anciennes versions retirées, images gardées
+    e = evenement();
+    ecouteurs.activate(e);
+    await Promise.all(e.attentes);
+    const cles = await caches.keys();
+    verifier(!cles.includes("agenda-0.9.0") && cles.includes("agenda-" + version) && cles.includes("images-agenda"),
+      "activation : ancienne version du cache retirée, images de l'agenda gardées");
+
+    // Hors ligne : ouverture de l'app, retour de connexion, fichiers
+    horsLigne = true;
+    const requete = (chemin, mode, methode) => ({url: new URL(chemin, portee).href, mode: mode || "cors", method: methode || "GET"});
+    e = evenement({request: requete("./", "navigate")});
+    ecouteurs.fetch(e);
+    let r = await e.reponse;
+    verifier(r && r.ok && (await r.text()).includes('data-app="agenda"'), "hors ligne : l'app s'ouvre (index.html depuis le cache)");
+    e = evenement({request: requete("./?code=abc&state=xyz", "navigate")});
+    ecouteurs.fetch(e);
+    r = await e.reponse;
+    verifier(r && (await r.text()).includes('data-app="agenda"'), "retour de la connexion Microsoft (?code=…) : servi par index.html");
+    e = evenement({request: requete("app.js")});
+    ecouteurs.fetch(e);
+    r = await e.reponse;
+    const vrai = await (await fetch("app.js", {cache: "no-store"})).text();
+    verifier(r && (await r.text()) === vrai, "hors ligne : app.js servi depuis le cache, identique");
+    e = evenement({request: requete("inconnu.txt")});
+    ecouteurs.fetch(e);
+    r = await e.reponse;
+    verifier(r && r.status === 503, "hors ligne : fichier inconnu → réponse « Hors ligne » (503)");
+
+    // Microsoft et OneDrive : jamais par le cache
+    e = evenement({request: {url: "https://graph.microsoft.com/v1.0/me/drive/root", mode: "cors", method: "GET"}});
+    ecouteurs.fetch(e);
+    verifier(e.reponse === undefined, "appels à Microsoft Graph : jamais servis par le cache");
+    e = evenement({request: requete("app.js", "cors", "PUT")});
+    ecouteurs.fetch(e);
+    verifier(e.reponse === undefined, "requêtes autres que GET : laissées au réseau");
+
+    // En ligne : réponse immédiate depuis le cache, mise à jour en arrière-plan
+    horsLigne = false;
+    await cache.put(new URL("config.js", portee).href, new Response("/* ancienne config */"));
+    e = evenement({request: requete("config.js")});
+    ecouteurs.fetch(e);
+    r = await e.reponse;
+    const servi = await r.text();
+    await Promise.all(e.attentes);
+    const apres = await (await cache.match(new URL("config.js", portee).href)).text();
+    verifier(servi === "/* ancienne config */" && apres.includes("AGENDA_CONFIG"),
+      "en ligne : servi tout de suite depuis le cache, puis mis à jour (prise en compte au lancement suivant)");
+  } catch (err) {
+    verifier(false, "exception : " + (err.stack || err));
+  }
+  const ol = document.getElementById("resultats");
+  ol.replaceChildren(...resultats.map(([ok, l]) => { const li = document.createElement("li"); li.className = ok ? "ok" : "ko"; li.textContent = (ok ? "✓ " : "✗ ") + l; return li; }));
+  const ko = resultats.filter(([ok]) => !ok).length;
+  document.getElementById("bilan").textContent = `${resultats.length - ko} / ${resultats.length} vérifications réussies` + (ko ? ` — ${ko} échec(s)` : "");
+  document.title = ko ? "ÉCHEC" : "OK " + resultats.length;
+})();
+</script>
+</body>
+</html>
