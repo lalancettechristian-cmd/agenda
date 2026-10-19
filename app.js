@@ -14,7 +14,7 @@
 
 const CONFIG = Object.assign({clientId: "", autorite: "consumers", dossier: "Agenda", redirection: "", base: "agenda-iphone"},
   window.AGENDA_CONFIG || {});
-const VERSION_APP = "1.0.2";
+const VERSION_APP = "1.0.3";
 const VERSION_DONNEES = 8;
 const DUREE_VERROU = 180;          // secondes sans battement : le verrou d'un poste est abandonné
 const OBJ = "￼";              // une image dans le texte d'une page
@@ -1311,7 +1311,8 @@ function ecranNote(sid, pid, k) {
     corps,
     h("div", {class: "pied-page"},
       h("span", {}, p.cree ? "Créée le " + dateCourte(p.cree) : ""),
-      h("span", {}, "Pièces jointes : ", h("button", {class: "lien", onclick: () => ouvrirPieces(p)}, String(nbPieces)))))];
+      h("span", {}, "Pièces jointes : ", h("button", {class: "lien", onclick: () => ouvrirPieces(p)}, String(nbPieces)),
+        " Vocal : ", h("button", {class: "lien", onclick: () => ouvrirVocaux(p)}, String((p.vocaux || []).length)))))];
 }
 
 function glisser(el, precedente, suivante) {
@@ -1764,6 +1765,42 @@ function ecranCalendrier(sid) {
 }
 
 /* ----- pièces jointes ----- */
+/* ----- messages vocaux (enregistrés sur le PC avec « + Vocal ») ----- */
+function texteDuree(secondes) {
+  const total = Math.round(Number(secondes) || 0);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+async function ouvrirVocaux(p) {
+  const enLigne = etat.mode === "reel" && !!etat.dossier && !!jetons && navigator.onLine;
+  const modif = peutModifier();
+  const r = await ouvrirFeuille((fermer) => {
+    const vocaux = p.vocaux || [];
+    const liste = h("ul", {class: "liste pieces"}, vocaux.length ? vocaux.map((x) => {
+      const audio = h("audio", {controls: true, preload: "none", class: "lecteur-vocal"});
+      const note = h("small", {class: "note-info"}, etat.mode === "demo" ? "Démonstration : pas de fichier à écouter"
+        : enLigne ? "" : "L'écoute demande le réseau");
+      if (enLigne) {
+        adresseTelechargement(["vocal", p.id, x.fichier]).then((url) => { if (url) audio.src = url; else note.textContent = "Fichier introuvable"; })
+          .catch(() => { note.textContent = "Indisponible"; });
+      }
+      return h("li", {}, h("div", {class: "ligne vocal"},
+        h("span", {class: "libelle"}, h("b", {}, x.description || x.fichier),
+          h("small", {}, `${texteDuree(x.duree)}${x.date ? " · " + dateCourte(String(x.date).slice(0, 10)) : ""}`)),
+        modif ? h("button", {class: "plus", "aria-label": "Supprimer le message", onclick: () => fermer({supprimer: x})}, "✕") : null,
+        enLigne ? audio : null, note));
+    }) : h("li", {class: "vide"}, "Aucun message vocal"));
+    return [h("h2", {}, "Messages vocaux"), liste,
+      h("p", {class: "note-info"}, "Les messages s'enregistrent sur le PC avec « + Vocal »."),
+      h("div", {class: "actions"}, h("button", {class: "bouton", onclick: () => fermer(null)}, "Fermer"))];
+  });
+  if (r && r.supprimer && await confirmer(`Supprimer le message vocal « ${r.supprimer.description || r.supprimer.fichier} » ?`)) {
+    p.vocaux.splice(p.vocaux.indexOf(r.supprimer), 1);
+    modifier();
+    supprimerDansOneDrive("vocal", p.id, r.supprimer.fichier);
+    rendre();
+    return ouvrirVocaux(p);
+  }
+}
 async function ouvrirPieces(p) {
   const enLigne = etat.mode === "reel" && !!etat.dossier && !!jetons && navigator.onLine;
   const modif = peutModifier();
