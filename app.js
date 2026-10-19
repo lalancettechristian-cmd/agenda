@@ -14,7 +14,7 @@
 
 const CONFIG = Object.assign({clientId: "", autorite: "consumers", dossier: "Agenda", redirection: "", base: "agenda-iphone"},
   window.AGENDA_CONFIG || {});
-const VERSION_APP = "1.0.0";
+const VERSION_APP = "1.0.2";
 const VERSION_DONNEES = 8;
 const DUREE_VERROU = 180;          // secondes sans battement : le verrou d'un poste est abandonné
 const OBJ = "￼";              // une image dans le texte d'une page
@@ -74,6 +74,13 @@ function quand(texte) {
   return `${t} à ${d.getHours()} h ${deux(d.getMinutes())}`;
 }
 function sansAccents(t) { return String(t).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""); }
+function rgb(c) { const n = parseInt(String(c).replace("#", ""), 16) || 0; return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+/** Couleur entre c1 et c2 (t = 0 : c1, t = 1 : c2), comme melanger() du PC. */
+function melanger(c1, c2, t) {
+  const a = rgb(c1), b = rgb(c2);
+  return "#" + a.map((x, i) => Math.round(x + (b[i] - x) * t).toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+function fonce(c, t) { return melanger(c, "#000000", t === undefined ? 0.3 : t); }
 function compter(texte, car) { let n = 0; for (const c of texte) if (c === car) n++; return n; }
 function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
 /** JSON aux clés triées : comparaison de contenu indépendante de l'ordre des clés. */
@@ -161,7 +168,7 @@ function h(tag, props, ...enfants) {
 function svg(tag, attrs, ...enfants) {
   const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
   for (const [k, v] of Object.entries(attrs || {})) if (v != null) e.setAttribute(k, v);
-  for (const c of enfants.flat()) if (c) e.append(c);
+  for (const c of enfants.flat()) if (c != null && c !== false) e.append(c instanceof Node ? c : String(c));
   return e;
 }
 
@@ -221,6 +228,9 @@ const sync = {enCours: false, erreur: null, besoinConnexion: false, horsLigne: !
   attenteSaisie: false, auDemarrage: true, verrouSignale: false};
 const semaines = new Map();   // page Agenda -> premier jour de la semaine affichée (comme sur le PC, non enregistré)
 let anneeCalendrier = null;
+const ABSENCE_COUVERTURE = 2 * 60 * 1000;  // retour dans l'app après 2 min : la couverture s'affiche de nouveau
+let apresCouverture = null;              // écran où reprendre après la couverture (retour dans l'app)
+let cacheDepuis = 0;
 
 async function chargerEtat() {
   etat.mode = (await BD.lire("mode")) === "demo" ? "demo" : "reel";
@@ -263,13 +273,42 @@ function nouvellePage(modele, titre) {
     const service = SERVICES[modele.service] ? modele.service : "page";
     Object.assign(p, {service, url: modele.url || SERVICES[service][1]});
   } else if (t === "tableur") p.url = modele.url || URL_TABLEUR;
-  else Object.assign(p, {colonnes: (modele.colonnes || ["Colonne 1", "Colonne 2"]).slice(), cellules: [], images_libres: []});
+  else {
+    Object.assign(p, {colonnes: (modele.colonnes || ["Colonne 1", "Colonne 2"]).slice(), cellules: [], images_libres: []});
+    const largeurs = largeursColonnes(p.colonnes.length, modele.largeurs);
+    if (largeurs) p.largeurs = largeurs;
+  }
   return p;
 }
 function modeleDe(p) {
-  if (p.type === "colonnes") return {type: "colonnes", colonnes: (p.colonnes || ["Nom", "Tél."]).slice()};
+  if (p.type === "colonnes") {
+    const modele = {type: "colonnes", colonnes: (p.colonnes || ["Nom", "Tél."]).slice()};
+    if (p.largeurs) modele.largeurs = p.largeurs.slice();
+    return modele;
+  }
   if (p.type === "web") return {type: "web", service: p.service || "page"};
   return {type: TYPES_PAGE.includes(p.type) ? p.type : "lignee"};
+}
+/** Largeur des colonnes en % (la dernière prend le reste) ; null : colonnes égales (comme largeurs_colonnes du PC). */
+function largeursColonnes(n, largeurs) {
+  if (!Array.isArray(largeurs) || largeurs.length !== n || n < 1) return null;
+  const v = largeurs.map(Number);
+  if (v.some((x) => !(x > 0))) return null;
+  const total = v.reduce((a, b) => a + b, 0);
+  const pct = v.slice(0, -1).map((x) => Math.max(1, Math.round(x * 100 / total)));
+  const reste = 100 - pct.reduce((a, b) => a + b, 0);
+  return reste >= 1 ? [...pct, reste] : null;
+}
+/** Police et taille d'écriture propres à la page (Paramètres de la page sur le PC). */
+function policePage(p) {
+  const r = p && typeof p.police === "object" && p.police ? p.police : {};
+  const taille = Number(r.taille) || 1;
+  return {famille: String(r.famille || "").trim() || null, taille: Math.min(1, Math.max(0.5, taille))};
+}
+function stylePolice(p, base) {
+  const {famille, taille} = policePage(p);
+  return {fontFamily: famille ? `"${famille.replace(/"/g, "")}", -apple-system, "Segoe UI", sans-serif` : null,
+    fontSize: taille !== 1 ? `${Math.round(base * taille * 10) / 10}px` : null};
 }
 function nouvelleTache(texte) { return {id: nouvelId(), texte: texte || "", fait: false, echeance: null}; }
 function nouvelleOperation(date) {
@@ -931,6 +970,7 @@ function rendre() {
   let vue;
   try {
     if (r[0] === "reglages") vue = ecranReglages();
+    else if (r[0] === "couverture" && etat.cahier) vue = ecranCouverture();
     else if (r[0] === "dossier" || (etat.mode === "reel" && jetons && !etat.dossier)) vue = ecranDossier();
     else if (!etat.cahier) vue = ecranBienvenue();
     else if (r[0] === "s") vue = ecranSection(r[1]);
@@ -971,13 +1011,158 @@ function ecranBienvenue() {
         h("button", {class: "bouton large", onclick: () => ouvrirDemo(false)}, "Essayer la démonstration"))))];
 }
 
+/* ----- couverture : la même que sur le PC (cuir, spirale, couture, titre doré, photo, année, élastique) ----- */
+const COUL_OR = "#D9B65E", COUL_OR_CLAIR = "#F4E3A8";
+let _mesureur = null;
+function largeurTexte(texte, police) {
+  _mesureur = _mesureur || document.createElement("canvas").getContext("2d");
+  _mesureur.font = police;
+  return _mesureur.measureText(texte).width;
+}
+function texteDore(x, y, texte, attrs, fond) {
+  const t = (dx, dy, couleur) => svg("text", Object.assign({x: x + dx, y: y + dy, fill: couleur, "text-anchor": "middle",
+    "dominant-baseline": "central"}, attrs), texte);
+  return [t(0.07, 0.13, fonce(fond, 0.55)), t(-0.06, -0.06, COUL_OR_CLAIR), t(0, 0, COUL_OR)];
+}
+function illustration(x, y, w, h) {
+  const p = (points, couleur) => svg("polygon", {points: points.map(([a, b]) => `${x + w * a},${y + h * b}`).join(" "), fill: couleur});
+  const sx = x + w * 0.68, sy = y + h * 0.42;
+  return [svg("rect", {x, y, width: w, height: h * 0.62 + 0.02, fill: "url(#ciel)"}),
+    svg("circle", {cx: sx, cy: sy, r: w * 0.085, fill: "#FFD27A"}),
+    p([[0, .62], [.17, .33], [.33, .5], [.52, .27], [.74, .54], [.88, .4], [1, .5], [1, .62]], "#7E9BB7"),
+    p([[0, .62], [.1, .5], [.24, .58], [.42, .44], [.6, .62]], "#5B7894"),
+    svg("rect", {x, y: y + h * 0.62, width: w, height: h * 0.38, fill: "#5F90B6"}),
+    [[.55, .8], [.6, .75], [.62, .72]].map(([a, b], k) => svg("line", {x1: x + w * a, x2: x + w * b,
+      y1: y + h * (0.66 + k * 0.035), y2: y + h * (0.66 + k * 0.035), stroke: "#A9CBE3", "stroke-width": 0.08})),
+    p([[0, .8], [.3, .72], [.55, .79], [.8, .74], [1, .77], [1, 1], [0, 1]], "#3F6B4F"),
+    [[.08, .78, .09], [.15, .76, .12], [.24, .75, .08], [.84, .74, .1], [.92, .76, .07]].map(([a, b, s]) =>
+      p([[a, b - s * 1.8], [a - s * 0.45, b], [a + s * 0.45, b]], "#2B4C39"))];
+}
+function ecranCouverture() {
+  const c = etat.cahier;
+  const couv = c.couverture || {};
+  const coul = couv.couleur || "#1F4E79";
+  const W = 26, H = 35, cx = (1.6 + W - 2.0) / 2;
+  const ouvrir = () => {  // au démarrage : l'agenda ; au retour dans l'app : là où l'on était
+    const suite = apresCouverture && apresCouverture !== "#/couverture" ? apresCouverture : "#/";
+    apresCouverture = null;
+    aller(suite);
+  };
+  // Titre doré : la plus grande taille qui tient (comme sur le PC)
+  const titre = c.titre || "Sans titre";
+  let taille = 0.6;
+  for (const f of [1.5, 1.3, 1.15, 1.0, 0.85, 0.7, 0.6]) {
+    if (largeurTexte(titre, `italic ${f * 100}px Georgia, "Times New Roman", serif`) / 100 <= W - 4.8) { taille = f; break; }
+  }
+  // Image encadrée (ou paysage dessiné tant qu'aucune image n'est choisie)
+  const img = couv.image && couv.image.fichier ? couv.image : null;
+  const haut = 7.8, bas = H - 5.4;
+  let w = 15, hImg = 11;
+  if (img) {
+    const ratio = Number(img.ratio) || 0.75;
+    w = 15.5; hImg = w * ratio;
+    if (hImg > bas - haut) { hImg = bas - haut; w = hImg / ratio; }
+  }
+  const x0 = cx - w / 2, y0 = haut + (bas - haut - hImg) / 2, m = 0.28;
+  const zoneImage = svg("g", {});
+  if (img) {
+    zoneImage.append(svg("rect", {x: x0, y: y0, width: w, height: hImg, fill: "#E9E1CC"}));
+    const legende = svg("text", {x: cx, y: y0 + hImg / 2, "text-anchor": "middle", "dominant-baseline": "central",
+      "font-size": 0.55, fill: "#8A8270", "font-family": "-apple-system, 'Segoe UI', sans-serif"}, "Chargement de la photo…");
+    zoneImage.append(legende);
+    urlImage(img.fichier).then((url) => {
+      if (url) {
+        legende.remove();
+        zoneImage.append(svg("image", {href: url, x: x0, y: y0, width: w, height: hImg, preserveAspectRatio: "xMidYMid slice"}));
+      } else legende.textContent = etat.mode === "demo" ? "Photo de couverture" : "Photo visible avec le réseau";
+    });
+  } else zoneImage.append(...illustration(x0, y0, w, hImg).flat(Infinity));
+  // Onglets des séparateurs sur la tranche : un toucher ouvre le séparateur
+  const secs = c.sections || [];
+  const hOnglet = secs.length ? Math.min(4.2, (H - 2.6) / secs.length) : 4;
+  const onglets = secs.map((s, k) => {
+    const y = 1.6 + k * hOnglet, hh = hOnglet - 0.18;
+    const n = Math.max(3, Math.floor(hh / 0.36));
+    const nom = s.titre.length > n ? s.titre.slice(0, n - 1) + "…" : s.titre;
+    const g = svg("g", {class: "onglet-couverture", role: "button", "aria-label": `Ouvrir ${s.titre}`},
+      svg("path", {d: `M ${W - 0.4} ${y} h 1.55 q 0.35 0 0.35 0.35 v ${hh - 0.7} q 0 0.35 -0.35 0.35 h -1.55 z`,
+        fill: s.couleur || "#6C7A89", stroke: fonce(s.couleur || "#6C7A89", 0.3), "stroke-width": 0.05}),
+      svg("text", {x: W + 0.75, y: y + hh / 2, transform: `rotate(90 ${W + 0.75} ${y + hh / 2})`, "text-anchor": "middle",
+        "dominant-baseline": "central", "font-size": 0.56, fill: "#FFFFFF", "font-family": "-apple-system, 'Segoe UI', sans-serif"}, nom));
+    g.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const notes = notesSection(s).length;
+      aller(s.type === "calendrier" && !notes ? `#/c/${encodeURIComponent(s.id)}` : `#/s/${encodeURIComponent(s.id)}`);
+    });
+    return g;
+  });
+  const anneaux = [];
+  for (let y = 1.0; y < H - 0.6; y += 1.36) {
+    anneaux.push(svg("path", {d: `M -0.95 ${y + 0.28} C -0.95 ${y - 0.62}, 1.45 ${y - 0.62}, 1.45 ${y + 0.05}`, fill: "none",
+      stroke: "#4E545C", "stroke-width": 0.42, "stroke-linecap": "round"}),
+    svg("path", {d: `M -0.95 ${y + 0.28} C -0.95 ${y - 0.62}, 1.45 ${y - 0.62}, 1.45 ${y + 0.05}`, fill: "none",
+      stroke: "url(#argent)", "stroke-width": 0.24, "stroke-linecap": "round"}),
+    svg("rect", {x: 1.18, y: y - 0.1, width: 0.42, height: 0.3, rx: 0.12, fill: "#2B2E33"}));
+  }
+  const xe = W - 1.8, ew = 0.8;
+  const dessin = svg("svg", {viewBox: "-1.4 -0.8 30 37.6", class: "dessin-couverture", role: "img",
+    "aria-label": `Couverture de l'agenda « ${titre} » : touchez pour ouvrir`},
+    svg("defs", {},
+      svg("linearGradient", {id: "argent", x1: 0, y1: 0, x2: 0, y2: 1},
+        svg("stop", {offset: "0", "stop-color": "#9AA1A9"}), svg("stop", {offset: "0.45", "stop-color": "#EEF1F3"}),
+        svg("stop", {offset: "1", "stop-color": "#8B929A"})),
+      svg("linearGradient", {id: "ciel", x1: 0, y1: 0, x2: 0, y2: 1},
+        svg("stop", {offset: "0", "stop-color": "#86BFE6"}), svg("stop", {offset: "1", "stop-color": "#FCE3BC"})),
+      svg("linearGradient", {id: "elastique", x1: 0, y1: 0, x2: 1, y2: 0},
+        svg("stop", {offset: "0", "stop-color": "#141416"}), svg("stop", {offset: "0.5", "stop-color": "#3D3D45"}),
+        svg("stop", {offset: "1", "stop-color": "#141416"})),
+      svg("clipPath", {id: "forme-couverture"}, svg("rect", {x: 0, y: 0, width: W, height: H, rx: 0.55})),
+      svg("filter", {id: "grain", x: 0, y: 0, width: W, height: H, filterUnits: "userSpaceOnUse"},
+        svg("feTurbulence", {type: "fractalNoise", baseFrequency: 1.6, numOctaves: 2, seed: 7}),
+        svg("feColorMatrix", {type: "matrix", values: "0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.6 1.05"}))),
+    // pages sous la couverture, signet
+    svg("rect", {x: 0.45, y: 0.35, width: W, height: H, rx: 0.5, fill: "#EFE8D6", stroke: "#CFC4AA", "stroke-width": 0.05}),
+    svg("polygon", {points: `14.6,${H - 0.3} 15.4,${H - 0.3} 15.4,${H + 1.5} 15,${H + 1.15} 14.6,${H + 1.5}`, fill: "#A3242B"}),
+    onglets,
+    // cuir
+    svg("rect", {x: 0, y: 0, width: W, height: H, rx: 0.55, fill: coul}),
+    svg("rect", {x: 0, y: 0, width: W, height: H, filter: "url(#grain)", "clip-path": "url(#forme-couverture)", opacity: 0.2}),
+    svg("rect", {x: 0.03, y: 0.03, width: W - 0.06, height: H - 0.06, rx: 0.55, fill: "none", stroke: fonce(coul, 0.45), "stroke-width": 0.06}),
+    svg("rect", {x: 1.6, y: 0.6, width: W - 2.2, height: H - 1.2, rx: 0.55, fill: "none", stroke: melanger(coul, "#F2E6C8", 0.72),
+      "stroke-width": 0.07, "stroke-dasharray": "0.32 0.22"}),
+    // titre doré et filet orné
+    texteDore(cx, 4.6, titre, {"font-size": taille, "font-style": "italic", "font-family": "Georgia, 'Times New Roman', serif"}, coul),
+    [-1, 1].map((sens) => svg("line", {x1: cx + sens * 0.5, x2: cx + sens * 4.5, y1: 6.3, y2: 6.3, stroke: COUL_OR, "stroke-width": 0.05})),
+    svg("polygon", {points: `${cx},${6.08} ${cx + 0.22},6.3 ${cx},${6.52} ${cx - 0.22},6.3`, fill: COUL_OR, stroke: fonce(coul, 0.3), "stroke-width": 0.03}),
+    // image encadrée
+    svg("rect", {x: x0 - m + 0.2, y: y0 - m + 0.28, width: w + 2 * m, height: hImg + 2 * m, fill: fonce(coul, 0.5)}),
+    svg("rect", {x: x0 - m, y: y0 - m, width: w + 2 * m, height: hImg + 2 * m, fill: "#F4EEDC", stroke: COUL_OR, "stroke-width": 0.06}),
+    zoneImage,
+    svg("rect", {x: x0, y: y0, width: w, height: hImg, fill: "none", stroke: melanger(COUL_OR, "#000000", 0.25), "stroke-width": 0.04}),
+    // année dorée
+    texteDore(cx, H - 3.3, String(c.annee || new Date().getFullYear()).split("").join(" "),
+      {"font-size": 0.75, "font-family": "Georgia, 'Times New Roman', serif"}, coul),
+    // élastique et spirale
+    svg("rect", {x: xe + ew, y: -0.34, width: 0.22, height: H + 0.74, fill: fonce(coul, 0.45)}),
+    svg("rect", {x: xe, y: -0.34, width: ew, height: H + 0.74, fill: "url(#elastique)"}),
+    svg("line", {x1: xe + ew * 0.42, x2: xe + ew * 0.42, y1: -0.34, y2: H + 0.4, stroke: "#55555E", "stroke-width": 0.03}),
+    anneaux);
+  dessin.addEventListener("click", ouvrir);
+  return [h("header", {class: "barre barre-couverture"},
+    h("button", {class: "icone", "aria-label": "Réglages", onclick: () => aller("#/reglages")}, "⚙"),
+    h("button", {class: "statut", hidden: true}, h("span", {class: "point"}), h("span", {class: "texte"}))),
+  h("main", {class: "ecran-couverture"}, dessin,
+    h("button", {class: "indice-couverture", onclick: ouvrir}, "Touchez la couverture pour ouvrir l'agenda"))];
+}
+
 function ecranAccueil() {
   const c = etat.cahier;
   const auteur = c.modifie_par || {};
   return [barre({titre: c.titre || "Agenda", actions: h("button", {class: "icone", "aria-label": "Réglages", onclick: () => aller("#/reglages")}, "⚙")}),
     ...bandeaux(),
     h("main", {class: "contenu"},
-      h("div", {class: "couverture", style: {background: (c.couverture && c.couverture.couleur) || null}},
+      h("div", {class: "couverture", role: "button", tabindex: "0", "aria-label": "Afficher la couverture",
+        style: {background: (c.couverture && c.couverture.couleur) || null}, onclick: () => aller("#/couverture")},
         h("h2", {}, c.titre || "Agenda"),
         h("p", {}, etat.mode === "demo" ? "Démonstration — rien n'est envoyé dans OneDrive"
           : auteur.poste ? `Modifié sur ${auteur.poste === POSTE ? "l'iPhone" : "le poste " + auteur.poste} ${quand(auteur.date)}` : "")),
@@ -1192,6 +1377,7 @@ async function ajouterPage(s, debut, k) {
     const colonnes = (t || "").split(",").map((x) => x.trim()).filter(Boolean).slice(0, 8);
     if (!colonnes.length) return;
     modele.colonnes = colonnes;
+    if (p.type === "colonnes" && p.largeurs && p.largeurs.length === colonnes.length) modele.largeurs = p.largeurs.slice();
   } else if (r.type === "tableur") {
     const url = await demanderTexte("Tableur", "Adresse de la feuille Google Sheets", URL_TABLEUR);
     if (!url) return;
@@ -1222,7 +1408,8 @@ function ajusterHauteur(ta) { ta.style.height = "auto"; ta.style.height = ta.scr
 function editeurTexte(p) {
   p.texte = p.texte || "";
   const ta = h("textarea", {class: "zone-texte" + (p.type === "quadrillee" ? " quadrillee" : ""), value: p.texte,
-    disabled: !peutModifier(), autocapitalize: "sentences", spellcheck: "true", "aria-label": "Texte de la page"});
+    disabled: !peutModifier(), autocapitalize: "sentences", spellcheck: "true", "aria-label": "Texte de la page",
+    style: stylePolice(p, 17)});
   let precedent = ta.value;
   ta.addEventListener("input", () => {
     const texte = appliquerSaisieTexte(p, precedent, ta.value);
@@ -1270,6 +1457,7 @@ function editeurColonnes(p) {
   const modif = peutModifier();
   const tel = p.colonnes.map((c) => /^t[ée]l/i.test(c.trim()));
   const corps = h("tbody");
+  const police = stylePolice(p, 17);
   const valeur = (i, k) => (i < p.cellules.length && k < p.cellules[i].length ? p.cellules[i][k] : "");
   const remplir = () => {
     const nb = Math.min(NB_CASES, p.cellules.length + (modif ? 1 : 0));
@@ -1279,7 +1467,7 @@ function editeurColonnes(p) {
   };
   const rangee = (i) => {
     const numeros = p.colonnes.map((_, k) => valeur(i, k)).filter((v, k) => tel[k] && v.trim());
-    return h("tr", {}, p.colonnes.map((_, k) => h("td", {}, h("input", {value: valeur(i, k), disabled: !modif,
+    return h("tr", {}, p.colonnes.map((_, k) => h("td", {}, h("input", {value: valeur(i, k), disabled: !modif, style: police,
       inputmode: tel[k] ? "tel" : null, autocapitalize: tel[k] ? "off" : "words", "aria-label": p.colonnes[k],
       oninput: (e) => {
         const avant = p.cellules.length;
@@ -1294,7 +1482,10 @@ function editeurColonnes(p) {
   };
   const info = h("p", {class: "note-info"});
   remplir();
-  return [h("div", {class: "grille-defil"}, h("table", {class: "grille"},
+  const largeurs = largeursColonnes(p.colonnes.length, p.largeurs);  // réglées sur le PC (Modifier les colonnes)
+  return [h("div", {class: "grille-defil"}, h("table", {class: "grille" + (largeurs ? " proportionnelle" : "")},
+    largeurs ? h("colgroup", {}, largeurs.map((v) => h("col", {style: {width: `${(v * 0.88).toFixed(2)}%`}})),
+      h("col", {style: {width: "12%"}})) : null,  // 12 % : le bouton d'appel
     h("thead", {}, h("tr", {}, p.colonnes.map((c) => h("th", {}, c)), h("th", {}))), corps)), info];
 }
 
@@ -1791,12 +1982,47 @@ async function choisirDossier(d) {
 /* ===================================================================== démarrage */
 
 async function demarrer() {
-  if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
+  if ("serviceWorker" in navigator && location.protocol !== "file:") {
+    // Nouvelle version publiée : le service worker l'installe, puis l'app se recharge d'elle-même (pas pendant une
+    // saisie ; la copie locale est enregistrée avant). Au premier lancement, rien à recharger.
+    const avaitControleur = !!navigator.serviceWorker.controller;
+    let rechargement = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!avaitControleur || rechargement) return;
+      rechargement = true;
+      const recharger = () => {
+        if (enSaisie() || feuilleOuverte()) { setTimeout(recharger, 2000); return; }
+        sauverLocal(true).then(() => location.reload());
+      };
+      recharger();
+    });
+    navigator.serviceWorker.register("sw.js").then((reg) => {
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update().catch(() => {}); });
+    }).catch(() => {});
+  }
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* facultatif */ }
   await chargerEtat();
+  const retour = new URLSearchParams(location.search).has("code") || new URLSearchParams(location.search).has("error");
   try { await retourConnexion(); } catch (e) { sync.erreur = "Connexion impossible : " + (e.message || e); }
+  // À l'ouverture, la couverture de l'agenda (comme sur le PC) ; un toucher ouvre l'agenda.
+  if (etat.cahier && !retour && ["", "#", "#/"].includes(location.hash)) history.replaceState(null, "", "#/couverture");
   window.addEventListener("hashchange", rendre);
-  document.addEventListener("visibilitychange", () => { if (document.hidden) sauverLocal(true); else planifierSynchro(300); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      cacheDepuis = Date.now();
+      sauverLocal(true);
+      return;
+    }
+    // Retour dans l'app après une absence : la couverture, comme à l'ouverture ; un toucher reprend où l'on était.
+    if (cacheDepuis && Date.now() - cacheDepuis >= ABSENCE_COUVERTURE && etat.cahier && !feuilleOuverte()
+      && route()[0] !== "couverture") {
+      apresCouverture = location.hash || "#/";
+      history.replaceState(null, "", "#/couverture");
+      rendre();
+    }
+    cacheDepuis = 0;
+    planifierSynchro(300);
+  });
   window.addEventListener("pagehide", () => sauverLocal(true));
   window.addEventListener("online", () => { sync.horsLigne = false; majStatut(); planifierSynchro(300); });
   window.addEventListener("offline", () => { sync.horsLigne = true; majStatut(); });
@@ -1811,7 +2037,7 @@ window.AgendaTests = {interne: {etat, sync, synchroniser, modifier, adopter, env
   annulerSynchro: () => clearTimeout(minuterieSynchro)},
   paques, feriesQuebec, montantTexte, lireMontant, notesSection, entreesSection, finNote, debutNote,
   sujetDe, finSujet, nouvellePage, modeleDe, ajouterPageNote, deplacerPage, supprimerPages, poserCellule,
-  appliquerSaisieTexte, fusionner, soldes, debutSemaine, decalerDemo, canon, pageVide, iso, dateIso, OBJ};
+  appliquerSaisieTexte, fusionner, soldes, largeursColonnes, policePage, debutSemaine, decalerDemo, canon, pageVide, iso, dateIso, OBJ};
 
 if (document.body && document.body.dataset.app === "agenda") demarrer();
 })();

@@ -74,6 +74,16 @@ s = section();
 T.supprimerPages(s, 2, 3);
 verifier(s.pages.length === 3 && s.pages[2].note.titre === "N3" && s.pages[2].sujet.id === "s2", "supprimer la première page d'une note : la suivante prend le titre");
 
+// Largeur des colonnes (Modifier les colonnes sur le PC) et police de la page : mêmes règles que modele.py
+for (const [n, l, attendu] of [[2, [70, 30], [70, 30]], [3, [1, 1, 1], [33, 33, 34]], [3, [2, 1, 1], [50, 25, 25]],
+  [2, [100, 0], null], [2, [50], null], [2, null, null]]) {
+  verifier(egal(T.largeursColonnes(n, l), attendu), `largeurs de ${n} colonnes ${JSON.stringify(l)} → ${JSON.stringify(attendu)}`);
+}
+verifier(egal(T.policePage({police: {famille: "Georgia", taille: 0.8}}), {famille: "Georgia", taille: 0.8})
+  && egal(T.policePage({}), {famille: null, taille: 1}), "police propre à la page (Paramètres de la page)");
+const pl = T.nouvellePage(T.modeleDe({type: "colonnes", colonnes: ["Nom", "Tél."], largeurs: [70, 30]}), "Contacts");
+verifier(egal(pl.largeurs, [70, 30]), "nouvelle page en colonnes : mêmes largeurs que la page modèle");
+
 // Cases d'une page en colonnes
 const pc = T.nouvellePage({type: "colonnes", colonnes: ["Nom", "Tél."]}, "Contacts");
 T.poserCellule(pc, 2, 1, "418");
